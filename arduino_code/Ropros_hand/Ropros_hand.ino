@@ -7,6 +7,10 @@
 #include <FeedBackServo.h>                                     // Include library for parallax motor. Download here:https://github.com/HyodaKazuaki/Parallax-FeedBack-360-Servo-Control-Library-4-Arduino
 #include <Wire.h>                                              // Include wire library for bend sensor use
 #include <SparkFun_Displacement_Sensor_Arduino_Library.h>      // Include bend sensor library
+#include <SPI.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+//#include <Ropros_hand_graphics.h>
 
 // State Machine Variables
 enum State {GRASP, PINCH, BIRDIE, POINT, REST};                // Enum for state machine cases
@@ -19,7 +23,7 @@ State state = REST;                                            // Keeps track of
 
 // Force Sensitive Resistor Variables
 #define FSR_ANALOG_PIN  2                                      // Analog pin reading FSR data
-#define FSR_THRESHOLD   50                                     // Threshold FSR value to indicate user tap
+#define FSR_THRESHOLD   10                                     // Threshold FSR value to indicate user tap
 int fsr_reading = 0;                                           // Analog reading from FSR
 bool fsr_status = 0;                                           // 1 when threshold is reached, 0 when below threshold
 bool fsr_prev = 0;                                             // Previous FSR status in last reading
@@ -27,14 +31,25 @@ bool change_state = 0;                                         // Based on FSR s
 
 // Bend Sensor Variables - one axis sensor
 ADS myFlexSensor;                                              // Create object of the ADS class
-#define BEND_DATA_READY  4                                    // 'nDRDY' pin according to pinout that indicates data is ready to be recieved 
-#define I2C_FREQ         400000                               // I2C frequency for bend sensor operation
+#define BEND_DATA_READY  4                                     // 'nDRDY' pin according to pinout that indicates data is ready to be recieved 
+#define I2C_FREQ         400000                                // I2C frequency for bend sensor operation
 
 // Motor Variables
 #define MOT_FEEDBACK_PIN    2                                  // Motor angular position feedback data pin (needs to be pin 2 or 3)
 #define MOT_PIN             7                                  // Motor PWM pin
 FeedBackServo servo = FeedBackServo(MOT_FEEDBACK_PIN);         // Set feedback signal pin number
 
+// OLED Variables
+#define SCREEN_WIDTH 128                                      // OLED display width, in pixels
+#define SCREEN_HEIGHT 64                                      // OLED display height, in pixels
+#define OLED_RESET     -1                                     // Reset pin # (-1 if sharing Arduino reset pin)
+#define SCREEN_ADDRESS 0x3C
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+extern const unsigned char bitmap_birdie [];
+extern const unsigned char bitmap_grasp [];
+extern const unsigned char bitmap_pinch []; 
+extern const unsigned char bitmap_point [];
+extern const unsigned char bitmap_rest [];
 /////////////////////////////////////////////////////////////////
 // INITIALIZE PROGRAM
 void setup() {       
@@ -43,6 +58,18 @@ void setup() {
   while (!Serial)                                              // Loop until serial data is recieved
   ;
   Serial.println("Program loaded.");                           // Print that program is loaded
+
+  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
+  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;); // Don't proceed, loop forever
+  }
+  // Show initial display buffer Adafruit splash screen
+  display.display();
+  delay(2000);
+  // Clear the buffer
+  display.clearDisplay();
+  delay(200);
 
   // Initialize Solenoids
   pinMode(SOL_POINTER, OUTPUT);                                // Set solenoid pin as digital output
@@ -83,7 +110,7 @@ void mode_state_machine(){
   change_state = read_fsr();
   switch(state){                                               // Switch cases according to the state variable
     case GRASP:                                                // Grasp: actuate all fingers to grasp an object
-      //grasp();                                                 // Call the state handler function for grasping
+      grasp();                                                 // Call the state handler function for grasping
       if (change_state == 1){
         Serial.println("Change to pinch");
         //rest();
@@ -91,7 +118,7 @@ void mode_state_machine(){
       }
       break; 
     case PINCH:                                                // Pinch: lock ring finger and pinkie in the upright position then actuate middle and pointer fingers
-      //pinch();                                                 // Call the state handler function for pinching
+      pinch();                                                 // Call the state handler function for pinching
       if (change_state == 1){
         Serial.println("Change to birdie");
         //rest();
@@ -99,7 +126,7 @@ void mode_state_machine(){
       }
       break;
     case BIRDIE:                                               // Birdie: lock middle finger and actuate others
-      //birdie();                                                // Call the state handler function for birdie
+      birdie();                                                // Call the state handler function for birdie
       if (change_state == 1){
         Serial.println("Change to point");
         //rest();
@@ -107,14 +134,14 @@ void mode_state_machine(){
       }
       break;
     case POINT:                                                // Point: lock pointer finger and actuate others
-      //point();                                                 // Call the state handler function for pointing
+      point();                                                 // Call the state handler function for pointing
       if (change_state == 1){
         Serial.println("Change to rest");
         state = REST;
       }
       break;
     case REST:                                                 // Rest: release all breaks and allow reverse motor back to neutral position
-      //rest();                                                  // Call the state handler function for resting
+      rest();                                                  // Call the state handler function for resting
       if (change_state == 1){
         Serial.println("Change to grasp");
         state = GRASP;
@@ -128,26 +155,41 @@ void mode_state_machine(){
 
 // Grasp: actuate all fingers 100%
 void grasp(){
+   displayImage(bitmap_grasp);                                 // Show grasp image on OLED display
 }
 
 // Pinch: lock ring finger and pinkie upright then actuate other fingers 100%
 void pinch(){
+  displayImage(bitmap_pinch);                                 // Show pinch image on OLED display
   activate_solenoid(SOL_OTHER);                                // Activate braking for ring finger and pinkie
 }
 
 // Birdie: lock middle finger upright then actuate other fingers 100%
 void birdie(){ 
+  displayImage(bitmap_birdie);                                // Show birdie image on OLED display
   activate_solenoid(SOL_MIDDLE);                               // Activate braking for middle finger
 }
 
 // Point: lock pointer finger upright then actuate other fingers 100%
 void point(){
+  displayImage(bitmap_point);                                 // Show point image on OLED display
   activate_solenoid(SOL_POINTER);                              // Activate braking for pointer finger
 }
 
 // Rest: deactivate all braking so fingers go back to neutral, upright position
-void rest(){                                                   
+void rest(){      
+  displayImage(bitmap_rest);                                  // Show rest image on OLED display                                               
   deactivate_all();                                            // Deactivate all braking
+}
+
+/////////////////////////////////////////////////////////////////
+// OLED FUNCTIONS
+void displayImage(const uint8_t* bitmap) {
+  //Show bitmap on OLED display
+  display.clearDisplay();
+  delay(200);
+  display.drawBitmap(0, 0, bitmap, SCREEN_WIDTH, SCREEN_HEIGHT, WHITE);
+  display.display();
 }
 
 /////////////////////////////////////////////////////////////////
