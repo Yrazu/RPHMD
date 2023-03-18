@@ -6,29 +6,67 @@
 /////////////////////////////////////////////////////////////////
 #include <Servo.h>                                             // Include servo library
 
+// State Machine Variables
 enum State {GRASP, PINCH, BIRDIE, POINT, REST};                // Enum for state machine cases
-State state = REST;                                           // Keeps track of current state
+State state = REST;                                            // Keeps track of current state
 
-int sol_pointer = 5;                                           // Pointer finger breaking digital output pin
-int sol_middle = 6;                                            // Middle finger breaking digital output pin
-int sol_other = 4;                                             // Pinkie and ring finger breaking digital output pin
+// Solenoid Variables
+#define SOL_POINTER     5                                      // Pointer finger digital output pin
+#define SOL_MIDDLE      6                                      // Middle finger digital output pin
+#define SOL_OTHER       4                                      // Pinkie and ring finger digital output pin
 
-int fsr_analog_pin = 2;                                        // Analog pin reading FSR data
-int fsr_reading = 0;                                               // Analog reading from FSR
-int fsr_threshold = 50;                                      // Max allowed value from the FSR (approximated in testing)
-bool fsr_status = 0;
-bool fsr_prev = 0;
-int change_state = 0;
+// Force Sensitive Resistor Variables
+#define FSR_ANALOG_PIN  2                                      // Analog pin reading FSR data
+#define FSR_THRESHOLD   50                                     // Threshold FSR value to indicate user tap
+int fsr_reading = 0;                                           // Analog reading from FSR
+bool fsr_status = 0;                                           // 1 when threshold is reached, 0 when below threshold
+bool fsr_prev = 0;                                             // Previous FSR status in last reading
+bool change_state = 0;                                         // Based on FSR status and previous status, state changes when current status = 1 and previous = 0
+
+// Bend Sensor Variables - one axis sensor
+ADS myFlexSensor;                                              // Create object of the ADS class
+#define BEND_DATA_READY  4                                    // 'nDRDY' pin according to pinout that indicates data is ready to be recieved 
+#define I2C_FREQ         400000                               // I2C frequency for bend sensor operation
+
+// Motor Variables
+#define MOT_FEEDBACK_PIN    2                                  // Motor angular position feedback data pin (needs to be pin 2 or 3)
+#define MOT_PIN             7                                  // Motor PWM pin
+FeedBackServo servo = FeedBackServo(MOT_FEEDBACK_PIN);         // Set feedback signal pin number
 
 /////////////////////////////////////////////////////////////////
 // INITIALIZE PROGRAM
-void setup() {          
-  Serial.begin(115200);                                          // Set baud rate for serial communication
+void setup() {       
+  // Initialize Serial Communication   
+  Serial.begin(115200);                                        // Set baud rate for serial communication
+  while (!Serial)                                              // Loop until serial data is recieved
+  ;
   Serial.println("Program loaded.");                           // Print that program is loaded
 
-  pinMode(sol_pointer, OUTPUT);                                // Set solenoid pin as digital output
-  pinMode(sol_middle, OUTPUT);                                 // Set solenoid pin as digital output
-  pinMode(sol_other, OUTPUT);                                  // Set solenoid pin as digital output
+  // Initialize Solenoids
+  pinMode(SOL_POINTER, OUTPUT);                                // Set solenoid pin as digital output
+  pinMode(SOL_MIDDLE, OUTPUT);                                 // Set solenoid pin as digital output
+  pinMode(SOL_OTHER, OUTPUT);                                  // Set solenoid pin as digital output
+
+  // Initialize Status LED 
+  pinMode(LED_BUILTIN, OUTPUT);                                // Set LED pin as digital output
+  digitalWrite(LED_BUILTIN, LOW);                              // Turn off LED
+
+  // Initialize Bend Sensor
+  pinMode(BEND_DATA_READY, INPUT);                             // Set bend sensor data pin as digital input              
+  Wire.begin();                                                // Begins I2C communication
+  Wire.setClock(I2C_FREQ);                                     // Set clock for I2C communication
+  if (myFlexSensor.begin() == false){                          // Check if bend sensor is connected
+    Serial.println(F("No sensor detected. Check wiring. Freezing..."));
+    while(1){                                                  // Freeze program and blink status LED (labeled 'L' on Nano)
+      digitalWrite(LED_BUILTIN, HIGH);                         // Turn on LED
+      delay(1000);                                             // Wait 1 second
+      digitalWrite(LED_BUILTIN, LOW);                          // Turn off LED
+      delay(1000);                                             // Wait 1 second
+    }
+  }
+  
+  servo.setServoControl(MOT_PIN);                              // Set servo pwm control pin
+  servo.setKp(1.0);                                            // Set Kp to proportional controller
 }
 
 /////////////////////////////////////////////////////////////////
@@ -92,22 +130,22 @@ void grasp(){
 
 // Pinch: lock ring finger and pinkie upright then actuate other fingers 100%
 void pinch(){
-  activate_solenoid(sol_other);                                // Activate breaking for ring finger and pinkie
+  activate_solenoid(SOL_OTHER);                                // Activate braking for ring finger and pinkie
 }
 
 // Birdie: lock middle finger upright then actuate other fingers 100%
 void birdie(){ 
-  activate_solenoid(sol_middle);                               // Activate breaking for middle finger
+  activate_solenoid(SOL_MIDDLE);                               // Activate braking for middle finger
 }
 
 // Point: lock pointer finger upright then actuate other fingers 100%
 void point(){
-  activate_solenoid(sol_pointer);                              // Activate breaking for pointer finger
+  activate_solenoid(SOL_POINTER);                              // Activate braking for pointer finger
 }
 
-// Rest: deactivate all breaking so fingers go back to neutral, upright position
+// Rest: deactivate all braking so fingers go back to neutral, upright position
 void rest(){                                                   
-  deactivate_all();                                            // Deactivate all breaking
+  deactivate_all();                                            // Deactivate all braking
 }
 
 /////////////////////////////////////////////////////////////////
@@ -128,9 +166,9 @@ void deactivate_solenoid(int solenoidPin){
 
 // Deactivate all solenoids
 void deactivate_all(){
-  digitalWrite(sol_pointer, LOW);                              // Switch Solenoid OFF
-  digitalWrite(sol_middle, LOW);                               // Switch Solenoid OFF
-  digitalWrite(sol_other, LOW);                                // Switch Solenoid OFF
+  digitalWrite(SOL_POINTER, LOW);                              // Switch Solenoid OFF
+  digitalWrite(SOL_MIDDLE, LOW);                               // Switch Solenoid OFF
+  digitalWrite(SOL_OTHER, LOW);                                // Switch Solenoid OFF
   
 }
 
@@ -140,11 +178,11 @@ void deactivate_all(){
 // Read FSR Sensor
 bool read_fsr(){
   int switch_state = 0;
-  fsr_reading = analogRead(fsr_analog_pin);
-  if (fsr_reading >= fsr_threshold){
+  fsr_reading = analogRead(FSR_ANALOG_PIN);
+  if (fsr_reading >= FSR_THRESHOLD){
     fsr_status = 1;
   }
-  else if (fsr_reading <= fsr_threshold){
+  else if (fsr_reading <= FSR_THRESHOLD){
     fsr_status = 0;
   }
   if (fsr_status == 1 & fsr_prev == 0){
@@ -155,3 +193,6 @@ bool read_fsr(){
   fsr_prev = fsr_status;
   return switch_state;
 }
+
+///////////////////////////////////////////////////////////////////
+// GRAPHICS
