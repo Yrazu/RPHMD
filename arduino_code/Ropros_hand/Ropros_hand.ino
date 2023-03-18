@@ -4,7 +4,9 @@
  * Supported by: the rest of the Ropros Gang
  */
 /////////////////////////////////////////////////////////////////
-#include <Servo.h>                                             // Include servo library
+#include <FeedBackServo.h>                                     // Include library for parallax motor. Download here:https://github.com/HyodaKazuaki/Parallax-FeedBack-360-Servo-Control-Library-4-Arduino
+#include <Wire.h>                                              // Include wire library for bend sensor use
+#include <SparkFun_Displacement_Sensor_Arduino_Library.h>      // Include bend sensor library
 
 // State Machine Variables
 enum State {GRASP, PINCH, BIRDIE, POINT, REST};                // Enum for state machine cases
