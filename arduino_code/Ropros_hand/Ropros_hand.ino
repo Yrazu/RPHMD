@@ -7,10 +7,9 @@
 #include <FeedBackServo.h>                                     // Include library for parallax motor. Download here:https://github.com/HyodaKazuaki/Parallax-FeedBack-360-Servo-Control-Library-4-Arduino
 #include <Wire.h>                                              // Include wire library for bend sensor use
 #include <SparkFun_Displacement_Sensor_Arduino_Library.h>      // Include bend sensor library
-#include <SPI.h>
+#include <SPI.h>                                               // 
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-//#include <Ropros_hand_graphics.h>
 
 // State Machine Variables
 enum State {GRASP, PINCH, BIRDIE, POINT, REST};                // Enum for state machine cases
@@ -50,6 +49,7 @@ extern const unsigned char bitmap_grasp [];
 extern const unsigned char bitmap_pinch []; 
 extern const unsigned char bitmap_point [];
 extern const unsigned char bitmap_rest [];
+
 /////////////////////////////////////////////////////////////////
 // INITIALIZE PROGRAM
 void setup() {       
