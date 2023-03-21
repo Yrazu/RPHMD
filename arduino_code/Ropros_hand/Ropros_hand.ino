@@ -37,6 +37,7 @@ ADS myFlexSensor;                                              // Create object 
 #define MOT_FEEDBACK_PIN    2                                  // Motor angular position feedback data pin (needs to be pin 2 or 3)
 #define MOT_PIN             7                                  // Motor PWM pin
 FeedBackServo servo = FeedBackServo(MOT_FEEDBACK_PIN);         // Set feedback signal pin number
+int motor_angle;
 
 // OLED Variables
 #define SCREEN_WIDTH 128                                      // OLED display width, in pixels
@@ -194,6 +195,22 @@ void displayImage(const uint8_t* bitmap) {
 
 /////////////////////////////////////////////////////////////////
 // MOTOR FUNCTIONS
+int motor_full_grasp(int desired_angle){
+  motor_angle = servo.Angle();
+  Serial.println("New angle: ", motor_angle);
+  servo.rotate(desired_angle, 0);
+  change_state = read_fsr();
+  
+  while (change_state == false){
+    change_state = read_fsr();
+  }
+  
+  return motor_angle;
+}
+
+int motor_mirror_thumb(){
+  
+}
 
 /////////////////////////////////////////////////////////////////
 // SOLENOID FUNCTIONS
