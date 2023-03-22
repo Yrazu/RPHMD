@@ -1,6 +1,6 @@
 #include <FeedBackServo.h>                                        // Servo motor library
 
-#include <SparkFun_Displacement_Sensor_Arduino_Library.h>         // Bend sensor library
+#include "SparkFun_Displacement_Sensor_Arduino_Library.h"         // Bend sensor library
 #include <Wire.h>                                                 // Needed for bend sensor
 
 // Parallax Motor
@@ -15,10 +15,14 @@ ADS myFlexSensor;                                                 // Create ADS 
 // Parallax Motor
 FeedBackServo servo = FeedBackServo(FEEDBACK_PIN);                // Set feedback signal pin number
 
-int angle = 40;
+int angle = 90;
 int lastAngle = angle;
+int threshold = 50;
+int old;
+int old2;
 
 void setup() {
+  pinMode(BEND_DATA_READY, INPUT);
   // put your setup code here, to run once:
   Serial.begin(115200);
   while (!Serial) { }
@@ -33,7 +37,7 @@ void setup() {
   servo.setKp(1.0);                                               // Set Kp to proportional controller
 
   // Configure bend sensor
-  pinMode(BEND_DATA_READY, INPUT);                                // Set bend sensor data pin as digital input              
+  //pinMode(BEND_DATA_READY, INPUT);                                // Set bend sensor data pin as digital input              
   Wire.begin();                                                   // Begins I2C communication
   Wire.setClock(I2C_FREQ);                                        // Set clock for I2C communication
   if (myFlexSensor.begin() == false){                             // Check if bend sensor is connected
@@ -45,14 +49,19 @@ void setup() {
       delay(1000);
     }
   }
+  myFlexSensor.run();
+
+  old = millis();
+  old2 = millis();
 }
 
+
 void loop() {
-  if (myFlexSensor.available()) {
+  if (myFlexSensor.available() && millis() - old > threshold) {
     angle = myFlexSensor.getX();
     Serial.print("Bend: ");
     Serial.println(angle);
-    angle += 90;
+    old = millis();
   }
   
   if (angle < 40)
@@ -63,10 +72,16 @@ void loop() {
   Serial.print("           Angle: ");
   Serial.println(angle);
     
-  if (abs(lastAngle - angle) > 1) {
-    lastAngle = angle;
-    servo.rotate(angle, 0);
-    Serial.print("                        Servo angle: ");
-    Serial.println(servo.Angle());
-  }
+//  if (millis() - old > threshold/2) {
+//    lastAngle = angle;
+//    servo.rotate(angle, 0);
+//    Serial.print("                        Servo angle: ");
+//    Serial.println(servo.Angle());
+//    old2 = millis();
+//  }
+
+  lastAngle = angle;
+  servo.rotate(angle, 0);
+  Serial.print("                        Servo angle: ");
+  Serial.println(servo.Angle());
 }
