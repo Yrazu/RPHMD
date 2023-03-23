@@ -197,7 +197,8 @@ void displayImage(const uint8_t* bitmap) {
 // MOTOR FUNCTIONS
 int motor_full_grasp(int desired_angle){
   motor_angle = servo.Angle();
-  Serial.println("New angle: ", motor_angle);
+  Serial.println("New angle: ");
+  Serial.println(motor_angle);
   servo.rotate(desired_angle, 0);
   change_state = read_fsr();
   
