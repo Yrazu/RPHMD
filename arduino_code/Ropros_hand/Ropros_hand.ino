@@ -13,7 +13,7 @@
 
 // State Machine Variables
 enum State {GRASP, PINCH, BIRDIE, POINT, REST};                // Enum for state machine cases
-State state = REST;                                            // Keeps track of current state
+State state = BIRDIE; //REST;                                            // Keeps track of current state
 
 // Solenoid Variables
 #define SOL_POINTER     5                                      // Pointer finger digital output pin
@@ -32,6 +32,7 @@ bool change_state = 0;                                         // Based on FSR s
 ADS myFlexSensor;                                              // Create object of the ADS class
 #define BEND_DATA_READY  4                                     // 'nDRDY' pin according to pinout that indicates data is ready to be recieved 
 #define I2C_FREQ         400000                                // I2C frequency for bend sensor operation
+#define BEND_ADDRESS     18
 
 // Motor Variables
 #define MOT_FEEDBACK_PIN    2                                  // Motor angular position feedback data pin (needs to be pin 2 or 3)
@@ -50,6 +51,9 @@ extern const unsigned char bitmap_grasp [];
 extern const unsigned char bitmap_pinch []; 
 extern const unsigned char bitmap_point [];
 extern const unsigned char bitmap_rest [];
+
+int fullGrasp = 180;
+bool i = 1;
 
 /////////////////////////////////////////////////////////////////
 // INITIALIZE PROGRAM
@@ -85,7 +89,7 @@ void setup() {
   pinMode(BEND_DATA_READY, INPUT);                             // Set bend sensor data pin as digital input              
   Wire.begin();                                                // Begins I2C communication
   Wire.setClock(I2C_FREQ);                                     // Set clock for I2C communication
-  if (myFlexSensor.begin() == false){                          // Check if bend sensor is connected
+  if (myFlexSensor.begin(BEND_ADDRESS) == false){                          // Check if bend sensor is connected
     Serial.println(F("No sensor detected. Check wiring. Freezing..."));
     while(1){                                                  // Freeze program and blink status LED (labeled 'L' on Nano)
       digitalWrite(LED_BUILTIN, HIGH);                         // Turn on LED
@@ -113,9 +117,10 @@ void mode_state_machine(){
     case GRASP:                                                // Grasp: actuate all fingers to grasp an object
       grasp();                                                 // Call the state handler function for grasping
       if (change_state == 1){
-        Serial.println("Change to pinch");
+        i = 1;
+        Serial.println("Change to rest");//Serial.println("Change to pinch");
         //rest();
-        state = PINCH;
+        state = REST;  //PINCH;
       }
       break; 
     case PINCH:                                                // Pinch: lock ring finger and pinkie in the upright position then actuate middle and pointer fingers
@@ -144,6 +149,7 @@ void mode_state_machine(){
     case REST:                                                 // Rest: release all breaks and allow reverse motor back to neutral position
       rest();                                                  // Call the state handler function for resting
       if (change_state == 1){
+        i = 1;
         Serial.println("Change to grasp");
         state = GRASP;
       }
@@ -157,6 +163,7 @@ void mode_state_machine(){
 // Grasp: actuate all fingers 100%
 void grasp(){
    displayImage(bitmap_grasp);                                 // Show grasp image on OLED display
+   motor_full_grasp(fullGrasp);
 }
 
 // Pinch: lock ring finger and pinkie upright then actuate other fingers 100%
@@ -169,6 +176,14 @@ void pinch(){
 void birdie(){ 
   displayImage(bitmap_birdie);                                // Show birdie image on OLED display
   activate_solenoid(SOL_MIDDLE);                               // Activate braking for middle finger
+  motor_angle = servo.Angle();
+  servo.rotate(180, 4);
+  Serial.println("New angle: ");
+  Serial.println(motor_angle);
+  motor_angle = servo.Angle();
+  servo.rotate(-180, 4);
+  Serial.println("New angle: ");
+  Serial.println(motor_angle);
 }
 
 // Point: lock pointer finger upright then actuate other fingers 100%
@@ -181,6 +196,7 @@ void point(){
 void rest(){      
   displayImage(bitmap_rest);                                  // Show rest image on OLED display                                               
   deactivate_all();                                            // Deactivate all braking
+  motor_reset(fullGrasp);
 }
 
 /////////////////////////////////////////////////////////////////
@@ -195,18 +211,26 @@ void displayImage(const uint8_t* bitmap) {
 
 /////////////////////////////////////////////////////////////////
 // MOTOR FUNCTIONS
-int motor_full_grasp(int desired_angle){
-  motor_angle = servo.Angle();
-  Serial.println("New angle: ");
-  Serial.println(motor_angle);
-  servo.rotate(desired_angle, 0);
-  change_state = read_fsr();
-  
-  while (change_state == false){
-    change_state = read_fsr();
-  }
-  
-  return motor_angle;
+void motor_full_grasp(int desired_angle){
+  //if (i == 1) {
+    motor_angle = servo.Angle();
+    servo.rotate(-300, 4);
+    Serial.println("New angle: ");
+    Serial.println(motor_angle);
+    i = 0;
+  //}
+  //return motor_angle;
+}
+
+void motor_reset(int desired_angle){
+  //if (i == 1){
+    motor_angle = servo.Angle();
+    servo.rotate(0, 4);
+    Serial.println("New angle: ");
+    Serial.println(motor_angle);
+    i = 0;
+  //}
+  //return motor_angle
 }
 
 int motor_mirror_thumb(){
