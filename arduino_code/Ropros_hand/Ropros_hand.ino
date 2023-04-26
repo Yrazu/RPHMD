@@ -12,12 +12,12 @@
 #include <Adafruit_SSD1306.h>
 
 // State Machine Variables
-enum State {GRASP, PINCH, BIRDIE, POINT, REST};                // Enum for state machine cases
-State state = BIRDIE; //REST;                                            // Keeps track of current state
+enum State {GRASP, BIRDIE, POINT, REST};                // Enum for state machine cases
+State state = REST;                                            // Keeps track of current state
 
 // Solenoid Variables
-#define SOL_POINTER     5                                      // Pointer finger digital output pin
-#define SOL_MIDDLE      6                                      // Middle finger digital output pin
+#define SOL_POINTER     6                                      // Pointer finger digital output pin (middle solenoid output on solenoid board)
+#define SOL_MIDDLE      5                                      // Middle finger digital output pin (right output on solenoid board)
 #define SOL_OTHER       4                                      // Pinkie and ring finger digital output pin
 
 // Force Sensitive Resistor Variables
@@ -30,7 +30,7 @@ bool change_state = 0;                                         // Based on FSR s
 
 // Bend Sensor Variables - one axis sensor
 ADS myFlexSensor;                                              // Create object of the ADS class
-#define BEND_DATA_READY  4                                     // 'nDRDY' pin according to pinout that indicates data is ready to be recieved 
+#define BEND_DATA_READY  3                                     // 'nDRDY' pin according to pinout that indicates data is ready to be recieved 
 #define I2C_FREQ         400000                                // I2C frequency for bend sensor operation
 #define BEND_ADDRESS     18
 
@@ -39,6 +39,7 @@ ADS myFlexSensor;                                              // Create object 
 #define MOT_PIN             7                                  // Motor PWM pin
 FeedBackServo servo = FeedBackServo(MOT_FEEDBACK_PIN);         // Set feedback signal pin number
 int motor_angle;
+int Kp = 1;
 
 // OLED Variables
 #define SCREEN_WIDTH 128                                      // OLED display width, in pixels
@@ -57,7 +58,10 @@ bool i = 1;
 
 /////////////////////////////////////////////////////////////////
 // INITIALIZE PROGRAM
-void setup() {       
+void setup() {     
+  servo.setServoControl(MOT_PIN);                              // Set servo pwm control pin
+  servo.setKp(1.0); 
+    
   // Initialize Serial Communication   
   Serial.begin(115200);                                        // Set baud rate for serial communication
   while (!Serial)                                              // Loop until serial data is recieved
@@ -98,9 +102,9 @@ void setup() {
       delay(1000);                                             // Wait 1 second
     }
   }
-  
-  servo.setServoControl(MOT_PIN);                              // Set servo pwm control pin
-  servo.setKp(1.0);                                            // Set Kp to proportional controller
+  myFlexSensor.run(); 
+  //servo.setServoControl(MOT_PIN);                              // Set servo pwm control pin
+  //servo.setKp(1.0);                                            // Set Kp to proportional controller
 }
 
 /////////////////////////////////////////////////////////////////
@@ -118,24 +122,16 @@ void mode_state_machine(){
       grasp();                                                 // Call the state handler function for grasping
       if (change_state == 1){
         i = 1;
-        Serial.println("Change to rest");//Serial.println("Change to pinch");
-        //rest();
-        state = REST;  //PINCH;
+        Serial.println("Change to birdie");
+        rest();
+        state =  BIRDIE;
       }
       break; 
-    case PINCH:                                                // Pinch: lock ring finger and pinkie in the upright position then actuate middle and pointer fingers
-      pinch();                                                 // Call the state handler function for pinching
-      if (change_state == 1){
-        Serial.println("Change to birdie");
-        //rest();
-        state = BIRDIE;
-      }
-      break;
     case BIRDIE:                                               // Birdie: lock middle finger and actuate others
       birdie();                                                // Call the state handler function for birdie
       if (change_state == 1){
         Serial.println("Change to point");
-        //rest();
+        rest();
         state = POINT;
       }
       break;
@@ -163,40 +159,28 @@ void mode_state_machine(){
 // Grasp: actuate all fingers 100%
 void grasp(){
    displayImage(bitmap_grasp);                                 // Show grasp image on OLED display
-   motor_full_grasp(fullGrasp);
-}
-
-// Pinch: lock ring finger and pinkie upright then actuate other fingers 100%
-void pinch(){
-  displayImage(bitmap_pinch);                                 // Show pinch image on OLED display
-  activate_solenoid(SOL_OTHER);                                // Activate braking for ring finger and pinkie
+   motor_full_grasp();
 }
 
 // Birdie: lock middle finger upright then actuate other fingers 100%
 void birdie(){ 
   displayImage(bitmap_birdie);                                // Show birdie image on OLED display
   activate_solenoid(SOL_MIDDLE);                               // Activate braking for middle finger
-  motor_angle = servo.Angle();
-  servo.rotate(180, 4);
-  Serial.println("New angle: ");
-  Serial.println(motor_angle);
-  motor_angle = servo.Angle();
-  servo.rotate(-180, 4);
-  Serial.println("New angle: ");
-  Serial.println(motor_angle);
+  motor_full_grasp();
 }
 
 // Point: lock pointer finger upright then actuate other fingers 100%
 void point(){
   displayImage(bitmap_point);                                 // Show point image on OLED display
   activate_solenoid(SOL_POINTER);                              // Activate braking for pointer finger
+  motor_full_grasp();
 }
 
 // Rest: deactivate all braking so fingers go back to neutral, upright position
-void rest(){      
-  displayImage(bitmap_rest);                                  // Show rest image on OLED display                                               
+void rest(){  
+  displayImage(bitmap_rest);                                  // Show rest image on OLED display                                      
   deactivate_all();                                            // Deactivate all braking
-  motor_reset(fullGrasp);
+  motor_reset();
 }
 
 /////////////////////////////////////////////////////////////////
@@ -211,30 +195,74 @@ void displayImage(const uint8_t* bitmap) {
 
 /////////////////////////////////////////////////////////////////
 // MOTOR FUNCTIONS
-void motor_full_grasp(int desired_angle){
-  //if (i == 1) {
-    motor_angle = servo.Angle();
-    servo.rotate(-300, 4);
-    Serial.println("New angle: ");
-    Serial.println(motor_angle);
-    i = 0;
-  //}
-  //return motor_angle;
+void motor_full_grasp(){
+  if (digitalRead(BEND_DATA_READY) == LOW) {
+    if (myFlexSensor.available() == true) //We still need to call .available because it loads the X and Y variables
+    {
+      if (myFlexSensor.getX() <= 30) {
+        motor_angle = servo.Angle();
+        servo.rotate(0, 4);
+        Serial.print("Bend angle: ");
+        Serial.println(myFlexSensor.getX());
+        Serial.print("New angle: ");
+        Serial.println(motor_angle);
+      }
+      else if (myFlexSensor.getX() > 30) {
+        motor_angle = servo.Angle();
+        motor_move(600, 36, 4);
+        Serial.print("Bend angle: ");
+        Serial.println(myFlexSensor.getX());
+        Serial.print("New angle: ");
+        Serial.println(motor_angle);
+    }
+  }
 }
 
-void motor_reset(int desired_angle){
-  //if (i == 1){
+void motor_reset(){
     motor_angle = servo.Angle();
     servo.rotate(0, 4);
     Serial.println("New angle: ");
     Serial.println(motor_angle);
-    i = 0;
-  //}
-  //return motor_angle
 }
 
 int motor_mirror_thumb(){
   
+}
+// fix angle variable
+int motor_move(int degree, int bs_init, int threshold){
+    int bs_last = read_bend();
+    float output, offset, value;
+    for (int errorAngle = degree - servo.Angle(); abs(errorAngle)>threshold; errorAngle = degree - servo.Angle())
+//    for (int errorAngle = read_bend() - servo.Angle(); abs(errorAngle)>threshold; errorAngle = read_bend() - servo.Angle())
+    {
+      Serial.print("bs_last = ");
+      Serial.println(bs_last);
+      bs_last = read_bend();
+      if ((bs_last <= bs_init - 36) && (bs_last != 0)) {
+        degree = degree - 100;
+        Serial.println("if");
+        servo.writeMicros(1500);
+        return;
+      }
+
+        output = errorAngle * Kp;
+        if (output > 200.0)
+            output = 200.0;
+        if (output < -200.0)
+            output = -200.0;
+        if (errorAngle > 0)
+            offset = 30.0;
+        else if (errorAngle < 0)
+            offset = -30.0;
+        else
+            offset = 0.0;
+
+        value = output + offset;
+        servo.writeMicros(1500 - value);
+    }
+    //if (read_fsr() == 1){
+    servo.writeMicros(1500);
+    //}
 }
 
 /////////////////////////////////////////////////////////////////
@@ -274,11 +302,21 @@ bool read_fsr(){
   if (fsr_status == 1 & fsr_prev == 0){
     switch_state = 1;
   }
-  Serial.println(switch_state);
   delay(100);
   fsr_prev = fsr_status;
   return switch_state;
 }
 
-///////////////////////////////////////////////////////////////////
-// GRAPHICS
+// Read Bend Sensor
+float read_bend(){
+  float bend_angle;
+  if(digitalRead(BEND_DATA_READY) == LOW){
+    if (myFlexSensor.available() == true){
+      bend_angle = myFlexSensor.getX();
+    }
+  }
+//  else{
+//    Serial.println("not available");
+//  }
+  return bend_angle;
+}
